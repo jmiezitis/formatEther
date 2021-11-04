@@ -1,0 +1,183 @@
+#!/usr/bin/perl -w
+
+use Tk;
+
+exit 0 if fork;
+
+close STDOUT;
+close STDERR;
+close STDIN;
+
+$tkh = MainWindow->new(
+	-name => 'Format Ethernet Addresses',
+);
+
+$tkMainMenu = $tkh->Frame( -relief => 'raised', -borderwidth => 2 );
+$tkMainMenu->pack( -side => 'top', -anchor => 'n', -fill => 'x' );
+
+$tkMenuButtonNew = $tkMainMenu->Menubutton(
+	-text => 'Convert',
+)->pack( -side => 'left' );
+
+#$tkMenuButtonOld = $tkMainMenu->Menubutton(
+#-text => 'Old',
+#)->pack( -side => 'left' );
+
+$tkMenuNew = $tkMenuButtonNew->Menu(
+	-title => 'Convert',
+	-postcommand => \&makeMenu,
+);
+
+#$tkMenuOld = $tkMenuButtonOld->Menu(
+#-title => 'Old',
+#);
+
+$tkMenuButtonNew->configure( -menu => $tkMenuNew );
+#$tkMenuButtonOld->configure( -menu => $tkMenuOld );
+
+$tkText = $tkh->Text(
+	-height => 1,
+	-width => 19,
+	-state => 'normal',
+	-background => 'white',
+)->pack();
+
+#$tkText->bind( '<ButtonRelease-2>', \&cbPaste );
+$tkText->tag( 'configure',
+	'normal',
+	-background => 'white',
+	-foreground => 'black',
+	-relief => 'flat',
+);
+$tkText->tag( 'configure',
+	'reverse',
+	-background => 'black',
+	-foreground => 'white',
+	-relief => 'raised',
+);
+
+MainLoop();
+
+sub makeMenu() {
+	my $text = $tkText->SelectionGet( -type => 'STRING' );
+	chomp $text;
+
+	my $ethers = convertEther( $text );
+
+	$tkMenuNew->delete( '0', 'end' ); # delete all 
+	#$tkMenuOld->delete( '0', 'end' ); # delete all 
+
+	foreach $ether ( @$ethers ) {
+		$tkMenuNew->add( 'command',
+			-label => "$ether",
+			-command => [ \&updateClipboard, $ether ],
+		);
+		$tkMenuNew->add( 'command',
+			-label => "\L$ether",
+			-command => [ \&updateClipboard, "\L$ether" ],
+		);
+		#$tkMenuOld->add( 'command',
+		#-label => "$ether",
+		#-command => [ \&updateClipboard, $ether ],
+		#);
+	}
+}
+
+sub updateClipboard( $ ) {
+	my( $ether ) = @_;
+
+	$SelectedEther = $ether;
+
+	&cbPaste( $ether );
+	$tkText->SelectionOwn( -command => \&clearSelection );
+	$tkText->SelectionHandle( \&returnSelection );
+}
+
+sub clearSelection() {
+	$tkText->configure( -state => 'normal' );
+	$tkText->delete( '0.0', 'end' ); # delete all lines
+	$tkText->configure( -state => 'disabled' );
+}
+
+sub returnSelection() {
+	$SelectedEther;
+}
+
+sub cbPaste() {
+	my ( $text ) = @_;
+
+	print ( @_ );
+	$tkText->configure( -state => 'normal' );
+
+	$tkText->delete( '1.0', 'end' ); # delete all lines
+
+	$tkText->insert(
+		'end',
+		" ",
+		'normal',
+		$text,
+		'reverse',
+	);
+
+	$tkText->configure( -state => 'normal' );
+}
+
+sub plainEther( $ ) {
+	my ( $ether ) = @_;
+
+	$ether = "\U$ether";
+
+	# $ether may already be in the correct format
+	return $ether if ( $ether =~ /^[\dA-F]{12}$/ );
+
+	# split on anything which is not a hexadecimal number
+	my @ether = split( /[^\dA-F]/, $ether );
+
+	$ether = '';
+	my ( $word, $len );
+	foreach $word ( @ether ) {
+		$len = 12 / ( $#ether + 1 );  # Determine the word length
+
+		# Pad $word with leading '0's to correct length $len
+		$word = '0' x ($len - length $word) . $word;
+
+		# Append $word to $ether and end
+		# if $ether has reached 12 digits or more.
+		$ether .= $word;
+		last if length $ether >= 12;
+	}
+
+	$ether;
+}
+
+sub convertEther( $ ) {
+
+	my ( $ether ) = @_;
+	my $ethers = [];
+
+	# Convert any ethernet address to a plain
+	# 12 digit hex number.
+
+	$ether = plainEther( $ether );
+
+	# Convert the plain ethernet address to several
+	# different formats and push each format onto
+	# the @$ethers array.
+
+	my @ether4 = unpack( 'A4A4A4', $ether );
+	my @ether2 = unpack( 'A2A2A2A2A2A2', $ether );
+
+	push @$ethers, $ether; # CMU Bootpd format
+	push @$ethers, join( '.', @ether4 ); # CISCO Router format
+	push @$ethers, join( '-', @ether4 ); # HP Switch/Router format
+	push @$ethers, join( ':', @ether2 ); # ISC DHCP Conf format
+	push @$ethers, join( '-', @ether2 ); # Proteus format
+	push @$ethers, join( '.', @ether2 ); # OID format
+
+	# Sun Solaris format
+	my $tmp = join( ':', @ether2 );
+	$tmp =~ s/0([\dA-F])/$1/g;
+	push @$ethers, $tmp;
+
+	$ethers;
+}
