@@ -9,3 +9,7 @@ Linux DHCPD config = 1c:ea:0b:da:ef:00
 Eliminate all seperators = 1CEA0BDAEF00
 
 Choose the required format from the Convert pull down menu and the result is placed in the copy/paste buffer
+
+Requires:
+* Perl 5
+* Perl/Tk
